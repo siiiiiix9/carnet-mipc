@@ -333,17 +333,22 @@ function startRecognitionSession(questionId, SpeechRecognitionAPI) {
   recognition.interimResults = true;
 
   recognition.onresult = (event) => {
-    let finalT = "", interimT = "";
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      const t = event.results[i][0].transcript;
-      if (event.results[i].isFinal) finalT += t; else interimT += t;
+    // Sur Chrome mobile (Android), le moteur ne fait pas toujours remonter
+    // les nouveaux mots un par un à des index séparés : il peut réémettre
+    // TOUT le texte reconnu jusqu'ici sous un nouvel index à chaque mot
+    // ("test", puis "test 1", puis "test 1 2"…). Additionner tous les index
+    // dupliquait donc le texte. On ne regarde que le DERNIER résultat, qui
+    // contient toujours la version la plus complète et la plus à jour de
+    // l'énoncé en cours — les index précédents sont ignorés.
+    const last = event.results[event.results.length - 1];
+    const t = last[0].transcript;
+    const sep = baseText && !baseText.endsWith(" ") ? " " : "";
+    if (last.isFinal) {
+      baseText = baseText + sep + t;
+      state.draft[questionId] = baseText;
+    } else {
+      state.draft[questionId] = baseText + sep + t;
     }
-    if (finalT) {
-      const sep = baseText && !baseText.endsWith(" ") ? " " : "";
-      baseText = baseText + sep + finalT;
-    }
-    const liveSep = baseText && !baseText.endsWith(" ") ? " " : "";
-    state.draft[questionId] = finalT ? baseText : baseText + liveSep + interimT;
     const ta = document.getElementById("answer-textarea");
     if (ta) ta.value = state.draft[questionId] || "";
   };
