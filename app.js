@@ -299,7 +299,7 @@ function exportAll() {
 
 let recognition = null;
 let baseText = "";
-let finalChunks = [];
+let shouldContinue = false;
 
 function toggleListening(questionId) {
   const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -309,6 +309,7 @@ function toggleListening(questionId) {
     return;
   }
   if (state.listening) {
+    shouldContinue = false;
     recognition && recognition.stop();
     state.listening = false;
     render();
@@ -316,34 +317,52 @@ function toggleListening(questionId) {
   }
   state.speechError = null;
   baseText = state.draft[questionId] || "";
-  finalChunks = [];
+  shouldContinue = true;
+  startRecognitionSession(questionId, SpeechRecognitionAPI);
+}
+
+function startRecognitionSession(questionId, SpeechRecognitionAPI) {
   recognition = new SpeechRecognitionAPI();
   recognition.lang = "fr-FR";
-  recognition.continuous = true;
+  // Volontairement PAS "continuous: true" : en continu, Chrome a un bug connu
+  // qui refait remonter d'anciens segments déjà validés sous de nouveaux
+  // index, ce qui duplique le texte. On préfère enchaîner des sessions
+  // courtes (relancées automatiquement dans onend) : chaque session repart
+  // propre, sans ce bug d'index.
+  recognition.continuous = false;
   recognition.interimResults = true;
 
   recognition.onresult = (event) => {
-    let interimT = "";
+    let finalT = "", interimT = "";
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const t = event.results[i][0].transcript;
-      // On range chaque résultat "final" à son propre index : s'il repasse
-      // dans un événement suivant (comportement fréquent du navigateur), on
-      // écrase la même case au lieu de le rajouter en double.
-      if (event.results[i].isFinal) finalChunks[i] = t; else interimT += t;
+      if (event.results[i].isFinal) finalT += t; else interimT += t;
     }
-    const finalT = finalChunks.filter(Boolean).join(" ").trim();
-    const sep = baseText && !baseText.endsWith(" ") ? " " : "";
-    const sep2 = finalT && interimT ? " " : "";
-    state.draft[questionId] = baseText + sep + finalT + sep2 + interimT;
+    if (finalT) {
+      const sep = baseText && !baseText.endsWith(" ") ? " " : "";
+      baseText = baseText + sep + finalT;
+    }
+    const liveSep = baseText && !baseText.endsWith(" ") ? " " : "";
+    state.draft[questionId] = finalT ? baseText : baseText + liveSep + interimT;
     const ta = document.getElementById("answer-textarea");
     if (ta) ta.value = state.draft[questionId] || "";
   };
   recognition.onerror = (event) => {
+    if (event.error === "no-speech" || event.error === "aborted") return; // silence normal, onend va relancer
     state.speechError = event.error === "not-allowed" ? "Micro refusé — vérifie les autorisations du navigateur." : "Erreur de dictée, réessaie.";
+    shouldContinue = false;
     state.listening = false;
     render();
   };
   recognition.onend = () => {
+    if (shouldContinue) {
+      try {
+        startRecognitionSession(questionId, SpeechRecognitionAPI);
+        return;
+      } catch (e) {
+        // tombe dans l'arrêt normal ci-dessous
+      }
+    }
     state.listening = false;
     render();
   };
