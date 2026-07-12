@@ -299,6 +299,7 @@ function exportAll() {
 
 let recognition = null;
 let baseText = "";
+let finalChunks = [];
 
 function toggleListening(questionId) {
   const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -315,24 +316,25 @@ function toggleListening(questionId) {
   }
   state.speechError = null;
   baseText = state.draft[questionId] || "";
+  finalChunks = [];
   recognition = new SpeechRecognitionAPI();
   recognition.lang = "fr-FR";
   recognition.continuous = true;
   recognition.interimResults = true;
 
   recognition.onresult = (event) => {
-    let finalT = "", interimT = "";
+    let interimT = "";
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const t = event.results[i][0].transcript;
-      if (event.results[i].isFinal) finalT += t; else interimT += t;
+      // On range chaque résultat "final" à son propre index : s'il repasse
+      // dans un événement suivant (comportement fréquent du navigateur), on
+      // écrase la même case au lieu de le rajouter en double.
+      if (event.results[i].isFinal) finalChunks[i] = t; else interimT += t;
     }
+    const finalT = finalChunks.filter(Boolean).join(" ").trim();
     const sep = baseText && !baseText.endsWith(" ") ? " " : "";
-    if (finalT) {
-      baseText = baseText + sep + finalT;
-      state.draft[questionId] = baseText;
-    } else if (interimT) {
-      state.draft[questionId] = baseText + sep + interimT;
-    }
+    const sep2 = finalT && interimT ? " " : "";
+    state.draft[questionId] = baseText + sep + finalT + sep2 + interimT;
     const ta = document.getElementById("answer-textarea");
     if (ta) ta.value = state.draft[questionId] || "";
   };
