@@ -518,7 +518,7 @@ function renderEntry() {
   const textarea = el("textarea", {
     id: "answer-textarea",
     class: "textarea",
-    rows: "6",
+    rows: "15",
     placeholder: "Écris ici, dicte au micro, ou laisse vide et passe à la suite…",
     oninput: (e) => updateDraft(q.id, e.target.value),
   });
